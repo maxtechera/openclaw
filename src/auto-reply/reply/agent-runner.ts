@@ -365,6 +365,19 @@ export async function runReplyAgent(params: {
     });
 
     if (runOutcome.kind === "final") {
+      if (isDiagnosticsEnabled(cfg)) {
+        const firstText =
+          typeof runOutcome.payload.text === "string" ? runOutcome.payload.text.trim() : undefined;
+        emitDiagnosticEvent({
+          type: "outbound.sent",
+          sessionKey,
+          sessionId: followupRun.run.sessionId,
+          channel: replyToChannel,
+          payloadCount: 1,
+          hasMedia: Boolean(runOutcome.payload.mediaUrl || runOutcome.payload.mediaUrls?.length),
+          contentPreview: firstText ? firstText.slice(0, 240) : undefined,
+        });
+      }
       return finalizeWithFollowup(runOutcome.payload, queueKey, runFollowupTurn);
     }
 

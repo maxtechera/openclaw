@@ -1,4 +1,4 @@
-import { context, metrics, trace, SpanStatusCode } from "@opentelemetry/api";
+import { context, metrics, trace, SpanStatusCode, type Span } from "@opentelemetry/api";
 import type { SeverityNumber } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
@@ -78,8 +78,9 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
   let stopLogTransport: (() => void) | null = null;
   let unsubscribe: (() => void) | null = null;
   let unsubscribeAgentEvents: (() => void) | null = null;
-  let turnSpans = new Map<string, { end: () => void; setStatus: (v: unknown) => void }>();
-  let toolSpans = new Map<string, { end: () => void; setStatus: (v: unknown) => void }>();
+  let turnSpans = new Map<string, Span>();
+  let pendingTurnCompletion = new Set<string>();
+  let toolSpans = new Map<string, Span>();
 
   return {
     id: "diagnostics-otel",
@@ -173,10 +174,11 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
       const meter = metrics.getMeter("openclaw");
       const tracer = trace.getTracer("openclaw");
       const enrichment = otel.enrichment;
-      const enrichmentEnabled = enrichment?.enabled !== false;
-      const fullTraceTreeEnabled = enrichment?.fullTraceTree !== false;
-      const includeContentPreview = enrichment?.includeContent === true;
+      const enrichmentEnabled = enrichment?.enabled === true;
+      const fullTraceTreeEnabled = enrichmentEnabled && enrichment?.fullTraceTree === true;
+      const includeContentPreview = enrichmentEnabled && enrichment?.includeContent === true;
       turnSpans.clear();
+      pendingTurnCompletion.clear();
       toolSpans.clear();
 
       const findTurnSpanForRun = (runId?: string) => {
@@ -473,6 +475,9 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
           "gen_ai.usage.output_tokens": usage.output ?? 0,
           "gen_ai.usage.total_tokens": usage.total ?? 0,
         };
+        if (typeof evt.costUsd === "number") {
+          spanAttrs["gen_ai.usage.cost"] = evt.costUsd;
+        }
         addLangfuseSessionAttr(spanAttrs, evt);
 
         const span = spanWithDuration("openclaw.model.usage", spanAttrs, evt.durationMs);
@@ -550,7 +555,7 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
       };
 
       const addSessionIdentityAttrs = (
-        spanAttrs: Record<string, string | number>,
+        spanAttrs: Record<string, string | number | boolean>,
         evt: { sessionKey?: string; sessionId?: string },
       ) => {
         if (evt.sessionKey) {
@@ -612,6 +617,12 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         const parentCtx = parentTurn ? trace.setSpan(context.active(), parentTurn) : undefined;
         const span = tracer.startSpan("openclaw.outbound.sent", { attributes: attrs }, parentCtx);
         span.end();
+
+        if (evt.runId && pendingTurnCompletion.has(evt.runId) && parentTurn) {
+          parentTurn.end();
+          turnSpans.delete(evt.runId);
+          pendingTurnCompletion.delete(evt.runId);
+        }
       };
 
       const recordLaneEnqueue = (
@@ -740,6 +751,11 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
                 attrs["openclaw.sessionKey"] = runContext.sessionKey;
                 attrs["langfuse.session.id"] = runContext.sessionKey;
               }
+              const existingSpan = turnSpans.get(evt.runId);
+              if (existingSpan) {
+                existingSpan.end();
+              }
+              pendingTurnCompletion.delete(evt.runId);
               const span = tracer.startSpan("openclaw.turn", { attributes: attrs });
               turnSpans.set(evt.runId, span);
               return;
@@ -755,9 +771,12 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
                     ? redactSensitiveText(evt.data.error)
                     : "turn failed";
                 span.setStatus({ code: SpanStatusCode.ERROR, message });
+                span.end();
+                turnSpans.delete(evt.runId);
+                pendingTurnCompletion.delete(evt.runId);
+                return;
               }
-              span.end();
-              turnSpans.delete(evt.runId);
+              pendingTurnCompletion.add(evt.runId);
               return;
             }
           }
@@ -823,6 +842,7 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         span.end();
       }
       turnSpans.clear();
+      pendingTurnCompletion.clear();
       stopLogTransport?.();
       stopLogTransport = null;
       if (logProvider) {
