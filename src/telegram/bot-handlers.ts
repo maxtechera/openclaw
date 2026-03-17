@@ -5,12 +5,12 @@ import {
   resolveInboundDebounceMs,
 } from "../auto-reply/inbound-debounce.js";
 import { buildCommandsPaginationKeyboard } from "../auto-reply/reply/commands-info.js";
-import { resolveTelegramSupersedeDebounceMs } from "../auto-reply/reply/telegram-supersede.js";
 import {
   buildModelsProviderData,
   formatModelsAvailableHeader,
 } from "../auto-reply/reply/commands-models.js";
 import { resolveStoredModelOverride } from "../auto-reply/reply/model-selection.js";
+import { resolveTelegramSupersedeDebounceMs } from "../auto-reply/reply/telegram-supersede.js";
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
 import { buildCommandsMessagePaginated } from "../auto-reply/status.js";
 import { shouldDebounceTextInbound } from "../channels/inbound-debounce-policy.js";
