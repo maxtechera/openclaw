@@ -45,6 +45,10 @@ vi.mock("@opentelemetry/api", () => ({
   },
   trace: {
     getTracer: () => telemetryState.tracer,
+    setSpan: vi.fn().mockImplementation((ctx: unknown, span: unknown) => ({ ctx, span })),
+  },
+  context: {
+    active: vi.fn().mockReturnValue({}),
   },
   SpanStatusCode: {
     ERROR: 2,
