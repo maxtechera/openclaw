@@ -9,11 +9,7 @@ import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { ParentBasedSampler, TraceIdRatioBasedSampler } from "@opentelemetry/sdk-trace-base";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import type {
-  AgentEventPayload,
-  DiagnosticEventPayload,
-  OpenClawPluginService,
-} from "../api.js";
+import type { AgentEventPayload, DiagnosticEventPayload, OpenClawPluginService } from "../api.js";
 import {
   getAgentRunContext,
   onAgentEvent,
@@ -598,7 +594,9 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         span.end();
       };
 
-      const recordOutboundSent = (evt: Extract<DiagnosticEventPayload, { type: "outbound.sent" }>) => {
+      const recordOutboundSent = (
+        evt: Extract<DiagnosticEventPayload, { type: "outbound.sent" }>,
+      ) => {
         if (!tracesEnabled || !enrichmentEnabled || !fullTraceTreeEnabled) {
           return;
         }
@@ -802,7 +800,9 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
                 attrs["langfuse.session.id"] = runContext.sessionKey;
               }
               const parentTurn = findTurnSpanForRun(evt.runId);
-              const parentCtx = parentTurn ? trace.setSpan(context.active(), parentTurn) : undefined;
+              const parentCtx = parentTurn
+                ? trace.setSpan(context.active(), parentTurn)
+                : undefined;
               const span = tracer.startSpan("openclaw.tool.call", { attributes: attrs }, parentCtx);
               toolSpans.set(`${evt.runId}:${toolCallId}`, span);
               return;

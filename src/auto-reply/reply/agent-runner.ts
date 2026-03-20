@@ -723,7 +723,9 @@ export async function runReplyAgent(params: {
     }
 
     if (isDiagnosticsEnabled(cfg) && finalPayloads.length > 0) {
-      const firstText = finalPayloads.find((payload) => typeof payload.text === "string")?.text?.trim();
+      const firstText = finalPayloads
+        .find((payload) => typeof payload.text === "string")
+        ?.text?.trim();
       emitDiagnosticEvent({
         type: "outbound.sent",
         sessionKey,
@@ -731,7 +733,9 @@ export async function runReplyAgent(params: {
         channel: replyToChannel,
         runId,
         payloadCount: finalPayloads.length,
-        hasMedia: finalPayloads.some((payload) => Boolean(payload.mediaUrl || payload.mediaUrls?.length)),
+        hasMedia: finalPayloads.some((payload) =>
+          Boolean(payload.mediaUrl || payload.mediaUrls?.length),
+        ),
         contentPreview: firstText ? firstText.slice(0, 240) : undefined,
       });
     }

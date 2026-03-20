@@ -117,9 +117,9 @@ vi.mock("../api.js", async () => {
   };
 });
 
+import { emitAgentEvent, registerAgentRunContext } from "../../../src/infra/agent-events.js";
 import type { OpenClawPluginServiceContext } from "../api.js";
 import { emitDiagnosticEvent } from "../api.js";
-import { emitAgentEvent, registerAgentRunContext } from "../../../src/infra/agent-events.js";
 import { createDiagnosticsOtelService } from "./service.js";
 
 const OTEL_TEST_STATE_DIR = "/tmp/openclaw-diagnostics-otel-test";
@@ -411,7 +411,9 @@ describe("diagnostics-otel service", () => {
     expect(names).toContain("openclaw.outbound.sent");
 
     const toolSpan = telemetryState.startedSpans.find((s) => s.name === "openclaw.tool.call");
-    const outboundSpan = telemetryState.startedSpans.find((s) => s.name === "openclaw.outbound.sent");
+    const outboundSpan = telemetryState.startedSpans.find(
+      (s) => s.name === "openclaw.outbound.sent",
+    );
     expect(toolSpan?.parentCtx).toBeDefined();
     expect(outboundSpan?.parentCtx).toBeDefined();
 
@@ -433,7 +435,8 @@ describe("diagnostics-otel service", () => {
     });
 
     const modelSpan = telemetryState.startedSpans.find((s) => s.name === "openclaw.model.usage");
-    const attrs = (modelSpan?.opts as { attributes?: Record<string, unknown> } | undefined)?.attributes;
+    const attrs = (modelSpan?.opts as { attributes?: Record<string, unknown> } | undefined)
+      ?.attributes;
     expect(attrs?.["openclaw.model"]).toBe("gpt-5");
     expect(attrs?.["gen_ai.request.model"]).toBe("gpt-5");
     expect(attrs?.["langfuse.session.id"]).toBe("agent:main:telegram:direct:1");
