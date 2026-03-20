@@ -13,14 +13,14 @@ import type {
   AgentEventPayload,
   DiagnosticEventPayload,
   OpenClawPluginService,
-} from "openclaw/plugin-sdk/diagnostics-otel";
+} from "../api.js";
 import {
   getAgentRunContext,
   onAgentEvent,
   onDiagnosticEvent,
   redactSensitiveText,
   registerLogTransport,
-} from "openclaw/plugin-sdk/diagnostics-otel";
+} from "../api.js";
 
 const DEFAULT_SERVICE_NAME = "openclaw";
 

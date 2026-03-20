@@ -4,7 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 
 let monolithicSdk = null;
-let jitiLoader = null;
+const jitiLoaders = new Map();
 
 function emptyPluginConfigSchema() {
   function error(message) {
@@ -61,16 +61,20 @@ function resolveControlCommandGate(params) {
   return { commandAuthorized, shouldBlock };
 }
 
-function getJiti() {
-  if (jitiLoader) {
-    return jitiLoader;
+function getJiti(tryNative) {
+  if (jitiLoaders.has(tryNative)) {
+    return jitiLoaders.get(tryNative);
   }
 
   const { createJiti } = require("jiti");
-  jitiLoader = createJiti(__filename, {
+  const jitiLoader = createJiti(__filename, {
     interopDefault: true,
+    // Prefer Node's native sync ESM loader for built dist/plugin-sdk/*.js files
+    // so local plugins do not create a second transpiled OpenClaw core graph.
+    tryNative,
     extensions: [".ts", ".tsx", ".mts", ".cts", ".mtsx", ".ctsx", ".js", ".mjs", ".cjs", ".json"],
   });
+  jitiLoaders.set(tryNative, jitiLoader);
   return jitiLoader;
 }
 
@@ -79,19 +83,17 @@ function loadMonolithicSdk() {
     return monolithicSdk;
   }
 
-  const jiti = getJiti();
-
-  const distCandidate = path.resolve(__dirname, "..", "..", "dist", "plugin-sdk", "index.js");
+  const distCandidate = path.resolve(__dirname, "..", "..", "dist", "plugin-sdk", "compat.js");
   if (fs.existsSync(distCandidate)) {
     try {
-      monolithicSdk = jiti(distCandidate);
+      monolithicSdk = getJiti(true)(distCandidate);
       return monolithicSdk;
     } catch {
       // Fall through to source alias if dist is unavailable or stale.
     }
   }
 
-  monolithicSdk = jiti(path.join(__dirname, "index.ts"));
+  monolithicSdk = getJiti(false)(path.join(__dirname, "compat.ts"));
   return monolithicSdk;
 }
 
@@ -108,26 +110,109 @@ const fastExports = {
   resolveControlCommandGate,
 };
 
-const monolithic = tryLoadMonolithicSdk();
-const rootExports =
-  monolithic && typeof monolithic === "object"
-    ? {
-        ...monolithic,
-        ...fastExports,
-      }
-    : { ...fastExports };
+const target = { ...fastExports };
+let rootExports = null;
 
-Object.defineProperty(rootExports, "__esModule", {
+function shouldResolveMonolithic(prop) {
+  if (typeof prop !== "string") {
+    return false;
+  }
+  return prop !== "then";
+}
+
+function getMonolithicSdk() {
+  const loaded = tryLoadMonolithicSdk();
+  if (loaded && typeof loaded === "object") {
+    return loaded;
+  }
+  return null;
+}
+
+function getExportValue(prop) {
+  if (Reflect.has(target, prop)) {
+    return Reflect.get(target, prop);
+  }
+  if (!shouldResolveMonolithic(prop)) {
+    return undefined;
+  }
+  const monolithic = getMonolithicSdk();
+  if (!monolithic) {
+    return undefined;
+  }
+  return Reflect.get(monolithic, prop);
+}
+
+function getExportDescriptor(prop) {
+  const ownDescriptor = Reflect.getOwnPropertyDescriptor(target, prop);
+  if (ownDescriptor) {
+    return ownDescriptor;
+  }
+  if (!shouldResolveMonolithic(prop)) {
+    return undefined;
+  }
+
+  const monolithic = getMonolithicSdk();
+  if (!monolithic) {
+    return undefined;
+  }
+
+  const descriptor = Reflect.getOwnPropertyDescriptor(monolithic, prop);
+  if (!descriptor) {
+    return undefined;
+  }
+
+  // Proxy invariants require descriptors returned for dynamic properties to be configurable.
+  return {
+    ...descriptor,
+    configurable: true,
+  };
+}
+
+rootExports = new Proxy(target, {
+  get(_target, prop, receiver) {
+    if (Reflect.has(target, prop)) {
+      return Reflect.get(target, prop, receiver);
+    }
+    return getExportValue(prop);
+  },
+  has(_target, prop) {
+    if (Reflect.has(target, prop)) {
+      return true;
+    }
+    if (!shouldResolveMonolithic(prop)) {
+      return false;
+    }
+    const monolithic = getMonolithicSdk();
+    return monolithic ? Reflect.has(monolithic, prop) : false;
+  },
+  ownKeys() {
+    const keys = new Set(Reflect.ownKeys(target));
+    if (monolithicSdk && typeof monolithicSdk === "object") {
+      for (const key of Reflect.ownKeys(monolithicSdk)) {
+        if (!keys.has(key)) {
+          keys.add(key);
+        }
+      }
+    }
+    return [...keys];
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    return getExportDescriptor(prop);
+  },
+});
+
+Object.defineProperty(target, "__esModule", {
   configurable: true,
   enumerable: false,
   writable: false,
   value: true,
 });
-Object.defineProperty(rootExports, "default", {
+Object.defineProperty(target, "default", {
   configurable: true,
   enumerable: false,
-  writable: false,
-  value: rootExports,
+  get() {
+    return rootExports;
+  },
 });
 
 module.exports = rootExports;
